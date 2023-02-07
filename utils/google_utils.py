@@ -17,6 +17,8 @@ def gsutil_getsize(url=''):
 
 
 def attempt_download(file, repo='WongKinYiu/yolov7'):
+    return # We don't need to download
+
     # Attempt file download if does not exist
     file = Path(str(file).strip().replace("'", '').lower())
 

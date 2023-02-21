@@ -369,6 +369,7 @@ def train(hyp, opt, device, tb_writer=None):
                     loss *= 4.
 
             # Backward
+            import ipdb; ipdb.set_trace()
             scaler.scale(loss).backward()
 
             # Optimize

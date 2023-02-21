@@ -636,7 +636,8 @@ class ComputeLossOTA:
         return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
 
     def build_targets(self, p, targets, imgs):
-        
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
         #indices, anch = self.find_positive(p, targets)
         indices, anch = self.find_3_positive(p, targets)
         #indices, anch = self.find_4_positive(p, targets)
@@ -659,7 +660,7 @@ class ComputeLossOTA:
             if this_target.shape[0] == 0:
                 continue
                 
-            txywh = this_target[:, 2:6] * imgs[batch_idx].shape[1] #change index to -4:
+            txywh = this_target[:, 2:6] * imgs[batch_idx].shape[1]
             txyxy = xywh2xyxy(txywh)
 
             pxyxys = []
@@ -715,16 +716,33 @@ class ComputeLossOTA:
             top_k, _ = torch.topk(pair_wise_iou, min(10, pair_wise_iou.shape[1]), dim=1)
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
+            #import ipdb; ipdb.set_trace()
+            def multihot_element(label,nc):
+                multihot = torch.zeros(nc)
+                for i in range(nc):
+                    if int(label) & 1 << i:
+                        multihot[i] = 1
+                label_str = f"{label:.2f}"
+                layout = int(label_str[-2])
+                orientation = int(label_str[-1])
+                multihot[-4] = layout
+                multihot[-3] = 1- layout
+                multihot[-2] = orientation
+                multihot[-1] = 1 - orientation
+                return multihot
+
+            def multihot(labels_list,nc):
+                # marks in integer, layout in 0.1, orientation in 0.01
+                return torch.cat([multihot_element(label,nc).reshape((1,-1)) for label in labels_list],dim=0)
+            # import ipdb; ipdb.set_trace()
+            test = multihot(this_target[:,1],self.nc).cuda().to(torch.int64)
+            # original = F.one_hot(this_target[:, 1].to(torch.int64), self.nc)
             gt_cls_per_image = (
-                F.one_hot(this_target[:, 1].to(torch.int64), self.nc)
+                test
                 .float()
                 .unsqueeze(1)
                 .repeat(1, pxyxys.shape[0], 1)
             )
-
-            # gt_layout_cls_perimage = [ F.one_hot(this_target[:, 1].to(torch.int64), 2).float()...
-            # gt_orientation_cls_perimage = [ F.one_hot(this_target[:, 2].to(torch.int64), 2).float()...
-            # gt_mark_cls_perimage = [ this_target[:, 3:-4]...
 
             num_gt = this_target.shape[0]
             cls_preds_ = (
@@ -733,22 +751,14 @@ class ComputeLossOTA:
             )
 
             y = cls_preds_.sqrt_()
-
             pair_wise_cls_loss = F.binary_cross_entropy_with_logits(
                torch.log(y/(1-y)) , gt_cls_per_image, reduction="none"
             ).sum(-1)
-
-            # layout_cls_loss = F.binary_cross_entropy_with_logits(
-            #   torch.log(y[:, 1]/(1-y[:, 1])) , gt_layout_cls_per_imamge, reduction="none"
-            #).sum(-1)
-
-            # orientation_cls_loss =
-            # mark_cls_loss = 
             del cls_preds_
         
             cost = (
-                pair_wise_cls_loss #layout_cls_loss*beta3 + orientaion_cls_loss*beta2 +mark_cls_loss * beta1
-                 + 3.0 * pair_wise_iou_loss
+                pair_wise_cls_loss
+                + 3.0 * pair_wise_iou_loss
             )
 
             matching_matrix = torch.zeros_like(cost)
@@ -854,7 +864,7 @@ class ComputeLossOTA:
             a = t[:, 6].long()  # anchor indices
             indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
             anch.append(anchors[a])  # anchors
-
+        import ipdb; ipdb.set_trace()
         return indices, anch
     
 

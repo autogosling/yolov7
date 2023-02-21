@@ -11,7 +11,7 @@ from itertools import repeat
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Thread
-import json
+
 import cv2
 import numpy as np
 import torch
@@ -406,8 +406,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         cache.pop('hash')  # remove hash
         cache.pop('version')  # remove version
         labels, shapes, self.segments = zip(*cache.values())
-        # self.labels_real = list(labels)
-        self.labels = labels
+        self.labels = list(labels)
         self.shapes = np.array(shapes, dtype=np.float64)
         self.img_files = list(cache.keys())  # update
         self.label_files = img2label_paths(cache.keys())  # update
@@ -473,7 +472,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         x = {}  # dict
         nm, nf, ne, nc = 0, 0, 0, 0  # number missing, found, empty, duplicate
         pbar = tqdm(zip(self.img_files, self.label_files), desc='Scanning images', total=len(self.img_files))
-        extra_classes = 2
         for i, (im_file, lb_file) in enumerate(pbar):
             try:
                 # verify images
@@ -489,41 +487,22 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     nf += 1  # label found
                     with open(lb_file, 'r') as f:
                         l = [x.split() for x in f.read().strip().splitlines()]
-                        classes = [el[0] for el in l]
-                        classes = [json.loads(el) for el in classes]
-                        data_rest = [el[1:] for el in l]
                         if any([len(x) > 8 for x in l]):  # is segment
                             classes = np.array([x[0] for x in l], dtype=np.float32)
                             segments = [np.array(x[1:], dtype=np.float32).reshape(-1, 2) for x in l]  # (cls, xy1...)
                             l = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
-                        
-                        # NUM_MARKS = 10
-                        def convert_to_num(classes):
-                            if type(classes) == int:
-                                return classes
-                            number = 0
-                            for class_el in classes:
-                                number += 1 << class_el
-                            return number
-                        def reshape_to_col(mylist):
-                            return np.array(mylist).reshape((len(mylist),1))
-                        marks_column = reshape_to_col([convert_to_num(class_el[0]) for class_el in classes])
-                        orientation_column = reshape_to_col([convert_to_num(class_el[1]) for class_el in classes])
-                        layout_column = reshape_to_col([convert_to_num(class_el[2]) for class_el in classes])
-                        l = np.array(data_rest, dtype=np.float32)
-                        l = np.concatenate([marks_column,l,orientation_column,layout_column],axis=1)
+                        l = np.array(l, dtype=np.float32)
                     if len(l):
-                        # assert l.shape[1] == 5, 'labels require 5 columns each'
+                        assert l.shape[1] == 5, 'labels require 5 columns each'
                         assert (l >= 0).all(), 'negative labels'
                         assert (l[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels'
                         assert np.unique(l, axis=0).shape[0] == l.shape[0], 'duplicate labels'
                     else:
                         ne += 1  # label empty
-                        l = np.zeros((0, 5+extra_classes), dtype=np.float32)
+                        l = np.zeros((0, 5), dtype=np.float32)
                 else:
                     nm += 1  # label missing
-                    l = np.zeros((0, 5+extra_classes), dtype=np.float32)
-                # x[im_file] = [l, classes, shape, segments]
+                    l = np.zeros((0, 5), dtype=np.float32)
                 x[im_file] = [l, shape, segments]
             except Exception as e:
                 nc += 1
@@ -558,7 +537,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
         if mosaic:
-            import ipdb; ipdb.set_trace()
             # Load mosaic
             if random.random() < 0.8:
                 img, labels = load_mosaic(self, index)

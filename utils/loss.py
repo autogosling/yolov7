@@ -8,6 +8,23 @@ from utils.general import bbox_iou, bbox_alpha_iou, box_iou, box_giou, box_diou,
 from utils.torch_utils import is_parallel
 
 
+def multihot_element(label,nc):
+    multihot = torch.zeros(nc)
+    for i in range(nc):
+        if int(label) & 1 << i:
+            multihot[i] = 1
+    # label_str = f"{label:.2f}"
+    # layout = int(label_str[-2])
+    # orientation = int(label_str[-1])
+    # multihot[-4] = layout
+    # multihot[-3] = 1- layout
+    # multihot[-2] = orientation
+    # multihot[-1] = 1 - orientation
+    return multihot
+
+def multihot(labels_list,nc):
+    # marks in integer, layout in 0.1, orientation in 0.01
+    return torch.cat([multihot_element(label,nc).reshape((1,-1)) for label in labels_list],dim=0)
 def smooth_BCE(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
     # return positive, negative label smoothing BCE targets
     return 1.0 - 0.5 * eps, 0.5 * eps
@@ -87,6 +104,7 @@ class SigmoidBin(nn.Module):
 
 
     def training_loss(self, pred, target):
+        import ipdb; ipdb.set_trace()
         assert pred.shape[-1] == self.length, 'pred.shape[-1]=%d is not equal to self.length=%d' % (pred.shape[-1], self.length)
         assert pred.shape[0] == target.shape[0], 'pred.shape=%d is not equal to the target.shape=%d' % (pred.shape[0], target.shape[0])
         device = pred.device
@@ -474,7 +492,10 @@ class ComputeLoss:
                 # Classification
                 if self.nc > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
-                    t[range(n), tcls[i]] = self.cp
+                    # multihot_mask = 
+                    # t[range(n), tcls[i]] = self.cp
+                    multihot_mask = multihot(tcls[i],self.nc).long()
+                    t[multihot_mask] = self.cp
                     #t[t==self.cp] = iou.detach().clamp(0).type(t.dtype)
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
@@ -584,6 +605,7 @@ class ComputeLossOTA:
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
+        
     
 
         # Losses
@@ -592,10 +614,12 @@ class ComputeLossOTA:
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
             n = b.shape[0]  # number of targets
+            
             if n:
                 ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
 
                 # Regression
+                
                 grid = torch.stack([gi, gj], dim=1)
                 pxy = ps[:, :2].sigmoid() * 2. - 0.5
                 #pxy = ps[:, :2].sigmoid() * 3. - 1.
@@ -607,13 +631,19 @@ class ComputeLossOTA:
                 lbox += (1.0 - iou).mean()  # iou loss
 
                 # Objectness
+                
                 tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
 
                 # Classification
                 selected_tcls = targets[i][:, 1].long()
+                
                 if self.nc > 1:  # cls loss (only if multiple classes)
+                    # import ipdb; ipdb.set_trace()
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
-                    t[range(n), selected_tcls] = self.cp
+                    # this code just means to "flip" on all the classes that are true.
+                    multihot_mask = multihot(selected_tcls,self.nc).long()
+                    t[multihot_mask] = self.cp
+                    # t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
                 # Append targets to text file
@@ -628,6 +658,7 @@ class ComputeLossOTA:
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
         lbox *= self.hyp['box']
+        
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
@@ -717,23 +748,6 @@ class ComputeLossOTA:
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
             #import ipdb; ipdb.set_trace()
-            def multihot_element(label,nc):
-                multihot = torch.zeros(nc)
-                for i in range(nc):
-                    if int(label) & 1 << i:
-                        multihot[i] = 1
-                label_str = f"{label:.2f}"
-                layout = int(label_str[-2])
-                orientation = int(label_str[-1])
-                multihot[-4] = layout
-                multihot[-3] = 1- layout
-                multihot[-2] = orientation
-                multihot[-1] = 1 - orientation
-                return multihot
-
-            def multihot(labels_list,nc):
-                # marks in integer, layout in 0.1, orientation in 0.01
-                return torch.cat([multihot_element(label,nc).reshape((1,-1)) for label in labels_list],dim=0)
             # import ipdb; ipdb.set_trace()
             test = multihot(this_target[:,1],self.nc).cuda().to(torch.int64)
             # original = F.one_hot(this_target[:, 1].to(torch.int64), self.nc)
@@ -864,7 +878,6 @@ class ComputeLossOTA:
             a = t[:, 6].long()  # anchor indices
             indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
             anch.append(anchors[a])  # anchors
-        import ipdb; ipdb.set_trace()
         return indices, anch
     
 
@@ -958,7 +971,9 @@ class ComputeLossBinOTA:
                 selected_tcls = targets[i][:, 1].long()
                 if self.nc > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, (1+obj_idx):], self.cn, device=device)  # targets
-                    t[range(n), selected_tcls] = self.cp
+                    # t[range(n), selected_tcls] = self.cp
+                    multihot_mask = multihot(selected_tcls,self.nc).long()
+                    t[multihot_mask] = self.cp
                     lcls += self.BCEcls(ps[:, (1+obj_idx):], t)  # BCE
 
                 # Append targets to text file
@@ -1065,7 +1080,8 @@ class ComputeLossBinOTA:
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
             gt_cls_per_image = (
-                F.one_hot(this_target[:, 1].to(torch.int64), self.nc)
+                # F.one_hot(this_target[:, 1].to(torch.int64), self.nc)
+                multihot(this_target[:,1],self.nc).cuda().to(torch.int64)
                 .float()
                 .unsqueeze(1)
                 .repeat(1, pxyxys.shape[0], 1)
@@ -1260,7 +1276,9 @@ class ComputeLossAuxOTA:
                 selected_tcls = targets[i][:, 1].long()
                 if self.nc > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
-                    t[range(n), selected_tcls] = self.cp
+                    # t[range(n), selected_tcls] = self.cp
+                    multihot_mask = multihot(selected_tcls,self.nc).long()
+                    t[multihot_mask] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
                 # Append targets to text file

@@ -209,7 +209,7 @@ def test(data,
                                     break
 
             # Append statistics (correct, conf, pcls, tcls)
-            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), torch.Tensor(tcls).cpu()))
 
         # Plot images
         if plots and batch_i < 3:
@@ -219,7 +219,19 @@ def test(data,
             Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
 
     # Compute statistics
-    stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+    def process_el(el):
+        if type(el) == float:
+            return el
+        else:
+            return torch.Tensor(el).cpu().detach().numpy()
+    def convert_t(x):
+        if type(x) == torch.Tensor:
+            return x.cpu()
+        elif type(x) == list:
+            return tuple(el.cpu() for el in x)
+        else:
+            return x
+    stats = [np.concatenate(convert_t(x), 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
         p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
@@ -282,8 +294,8 @@ def test(data,
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         print(f"Results saved to {save_dir}{s}")
     maps = np.zeros(nc) + map
-    for i, c in enumerate(ap_class):
-        maps[c] = ap[i]
+    # for i, c in enumerate(ap_class):
+        # maps[c] = 0
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 

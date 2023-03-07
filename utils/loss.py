@@ -13,18 +13,11 @@ def multihot_element(label,nc):
     for i in range(nc):
         if int(label) & 1 << i:
             multihot[i] = 1
-    # label_str = f"{label:.2f}"
-    # layout = int(label_str[-2])
-    # orientation = int(label_str[-1])
-    # multihot[-4] = layout
-    # multihot[-3] = 1- layout
-    # multihot[-2] = orientation
-    # multihot[-1] = 1 - orientation
     return multihot
 
 def multihot(labels_list,nc):
-    # marks in integer, layout in 0.1, orientation in 0.01
     return torch.cat([multihot_element(label,nc).reshape((1,-1)) for label in labels_list],dim=0)
+
 def smooth_BCE(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
     # return positive, negative label smoothing BCE targets
     return 1.0 - 0.5 * eps, 0.5 * eps
@@ -121,7 +114,10 @@ class SigmoidBin(nn.Module):
 
         target_bins = torch.full_like(pred_bin, self.cn, device=device)  # targets
         n = pred.shape[0] 
-        target_bins[range(n), bin_idx] = self.cp
+        # t[range(n), tcls[i]] = self.cp
+        multihot_mask = multihot(bin_idx,self.nc).long()
+        target_bins[multihot_mask] = self.cp
+        # target_bins[range(n), bin_idx] = self.cp
 
         loss_bin = self.BCEbins(pred_bin, target_bins) # BCE
 

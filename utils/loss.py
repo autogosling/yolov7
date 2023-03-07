@@ -1305,7 +1305,10 @@ class ComputeLossAuxOTA:
                 selected_tcls_aux = targets_aux[i][:, 1].long()
                 if self.nc > 1:  # cls loss (only if multiple classes)
                     t_aux = torch.full_like(ps_aux[:, 5:], self.cn, device=device)  # targets
-                    t_aux[range(n_aux), selected_tcls_aux] = self.cp
+
+                    multihot_mask = multihot(selected_tcls_aux,self.nc).long()
+                    t_aux[multihot_mask] = self.cp
+                    # t_aux[range(n_aux), selected_tcls_aux] = self.cp
                     lcls += 0.25 * self.BCEcls(ps_aux[:, 5:], t_aux)  # BCE
 
             obji = self.BCEobj(pi[..., 4], tobj)

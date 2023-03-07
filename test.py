@@ -135,7 +135,7 @@ def test(data,
 
             if len(pred) == 0:
                 if nl:
-                    stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+                    stats.append((torch.zeros(0, niou, dtype=torch.bool).cpu(), torch.Tensor().cpu(), torch.Tensor().cpu(), torch.Tensor(tcls).cpu()))
                 continue
 
             # Predictions
@@ -231,7 +231,7 @@ def test(data,
             return tuple(el.cpu() for el in x)
         else:
             return x
-    stats = [np.concatenate(convert_t(x), 0) for x in zip(*stats)]  # to numpy
+    stats = [torch.cat(convert_t(x),axis=0).numpy() for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
         p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95

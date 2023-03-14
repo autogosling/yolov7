@@ -1,1 +1,1 @@
-python test.py --weights runs/train/yolov7_gosling_fixed_res8/weights/best.pt --task test --data data/gosling.yaml 
+ipython test.py --pdb -- --weights runs/train/yolov7_gosling_fixed_res60/weights/best.pt --task test --data data/gosling.yaml 

@@ -97,7 +97,6 @@ class SigmoidBin(nn.Module):
 
 
     def training_loss(self, pred, target):
-        import ipdb; ipdb.set_trace()
         assert pred.shape[-1] == self.length, 'pred.shape[-1]=%d is not equal to self.length=%d' % (pred.shape[-1], self.length)
         assert pred.shape[0] == target.shape[0], 'pred.shape=%d is not equal to the target.shape=%d' % (pred.shape[0], target.shape[0])
         device = pred.device

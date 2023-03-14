@@ -8,6 +8,15 @@ import torch
 
 from . import general
 
+def multihot_element(label,nc):
+    multihot = torch.zeros(nc)
+    for i in range(nc):
+        if int(label) & 1 << i:
+            multihot[i] = 1
+    return multihot
+
+def multihot(labels_list,nc):
+    return torch.cat([multihot_element(label,nc).reshape((1,-1)) for label in labels_list],dim=0).int().detach().cpu()
 
 def fitness(x):
     # Model fitness as a weighted combination of metrics
@@ -146,7 +155,7 @@ class ConfusionMatrix:
 
         n = matches.shape[0] > 0
         m0, m1, _ = matches.transpose().astype(np.int16)
-        for i, gc in enumerate(gt_classes):
+        for i, gc in enumerate(multihot(gt_classes,self.nc)):
             j = m0 == i
             if n and sum(j) == 1:
                 self.matrix[gc, detection_classes[m1[j]]] += 1  # correct
@@ -154,7 +163,7 @@ class ConfusionMatrix:
                 self.matrix[self.nc, gc] += 1  # background FP
 
         if n:
-            for i, dc in enumerate(detection_classes):
+            for i, dc in enumerate(multihot(detection_classes,self.nc)):
                 if not any(m1 == i):
                     self.matrix[dc, self.nc] += 1  # background FN
 
@@ -213,7 +222,8 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py):
-            ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
+            # ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
+            ax.plot(px, y, linewidth=1, label=f"{i}")  # plot(confidence, metric)
     else:
         ax.plot(px, py.T, linewidth=1, color='grey')  # plot(confidence, metric)
 

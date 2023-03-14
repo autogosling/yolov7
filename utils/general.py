@@ -29,6 +29,15 @@ pd.options.display.max_columns = 10
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ['NUMEXPR_MAX_THREADS'] = str(min(os.cpu_count(), 8))  # NumExpr max threads
 
+def multihot_element(label,nc):
+    multihot = torch.zeros(nc)
+    for i in range(nc):
+        if int(label) & 1 << i:
+            multihot[i] = 1
+    return multihot
+
+def multihot(labels_list,nc):
+    return torch.cat([multihot_element(label,nc).reshape((1,-1)) for label in labels_list],dim=0)
 
 def set_logging(rank=-1):
     logging.basicConfig(
@@ -638,7 +647,12 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
             v = torch.zeros((len(l), nc + 5), device=x.device)
             v[:, :4] = l[:, 1:5]  # box
             v[:, 4] = 1.0  # conf
-            v[range(len(l)), l[:, 0].long() + 5] = 1.0  # cls
+
+            # t[range(n), tcls[i]] = self.cp
+            multihot_mask = multihot(l[:,0].long()+5,nc).long()
+            # v[range(len(l)), l[:, 0].long() + 5] = 1.0  # cls
+            v[multihot_mask] = 1.0  # cls
+            
             x = torch.cat((x, v), 0)
 
         # If none remain process next image

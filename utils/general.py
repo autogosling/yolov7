@@ -648,7 +648,6 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
             v[:, :4] = l[:, 1:5]  # box
             v[:, 4] = 1.0  # conf
 
-            # t[range(n), tcls[i]] = self.cp
             multihot_mask = multihot(l[:,0].long()+5,nc).long()
             # v[range(len(l)), l[:, 0].long() + 5] = 1.0  # cls
             v[multihot_mask] = 1.0  # cls
